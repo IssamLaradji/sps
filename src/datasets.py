@@ -6,7 +6,6 @@ from sklearn import metrics
 from haven import haven_utils as hu
 from torch.utils.data import Dataset
 import tqdm
-from . import optimizers
 import os
 import urllib
 
@@ -14,13 +13,6 @@ import numpy as np
 from sklearn.svm import SVC
 from sklearn.datasets import load_svmlight_file
 from torchvision.datasets import MNIST
-
-
-LIBSVM_URL = "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/binary/"
-LIBSVM_DOWNLOAD_FN = {"rcv1"       : "rcv1_train.binary.bz2",
-                      "mushrooms"  : "mushrooms",
-                      "ijcnn"      : "ijcnn1.tr.bz2",
-                      "w8a"        : "w8a"}
 
 
 def get_dataset(dataset_name, train_flag, datadir, exp_dict):
@@ -247,11 +239,16 @@ def load_libsvm(name, data_dir):
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
-    fn = LIBSVM_DOWNLOAD_FN[name]
+    libsvm_download_fn = {"rcv1"       : "rcv1_train.binary.bz2",
+                      "mushrooms"  : "mushrooms",
+                      "ijcnn"      : "ijcnn1.tr.bz2",
+                      "w8a"        : "w8a"}
+
+    fn = libsvm_download_fn[name]
     data_path = os.path.join(data_dir, fn)
 
     if not os.path.exists(data_path):
-        url = urllib.parse.urljoin(LIBSVM_URL, fn)
+        url = urllib.parse.urljoin("https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/binary/", fn)
         print("Downloading from %s" % url)
         urllib.request.urlretrieve(url, data_path)
         print("Download complete.")
