@@ -17,7 +17,7 @@ where `-e` is the experiment group, `-sb` is the result directory.
 `python trainval.py -e kernel -sb ../results -r 1`
 
 
-#### Visualize
+### 4. Visualize
 
 Create the jupyter by running `create_jupyter.py`, and run the first cell to get plots, 
 
