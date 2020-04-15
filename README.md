@@ -23,7 +23,7 @@ where `-e` is the experiment group, `-sb` is the result directory.
 
 Create the jupyter by running `create_jupyter.py`, and run the first cell to get plots, 
 
-![alt text](results/mnist.png)
+![alt text](results/results.png)
 
 
 #### Citation
