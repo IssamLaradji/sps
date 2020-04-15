@@ -5,7 +5,7 @@ Fast convergence with SPS optimizer. The first efficient stochastic variant of t
 ### 1. Install requirements
 
 `pip install -r requirements.txt`
-
+ 
 This command installs the [Haven library](https://github.com/ElementAI/haven) which helps in managing the experiments.
 
 ### 2. Mnist experiment
