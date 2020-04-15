@@ -34,3 +34,5 @@ Create the jupyter by running `create_jupyter.py`, and run the first cell to get
   year={2020}
 }
 ```
+
+It is a collaborative work between labs at MILA, Element AI, and UBC.
