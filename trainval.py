@@ -2,7 +2,7 @@ import os
 import argparse
 import torchvision
 import pandas as pd
-import torch 
+import torch
 import numpy as np
 import time
 import pprint
@@ -30,13 +30,13 @@ def trainval(exp_dict, savedir_base, reset=False):
     if reset:
         # delete and backup experiment
         hc.delete_experiment(savedir, backup_flag=True)
-    
+
     # create folder and save the experiment dictionary
     os.makedirs(savedir, exist_ok=True)
     hu.save_json(os.path.join(savedir, 'exp_dict.json'), exp_dict)
     pprint.pprint(exp_dict)
     print('Experiment saved in %s' % savedir)
-    
+
     # set seed
     # ---------------
     seed = 42 + exp_dict['runs']
@@ -54,16 +54,15 @@ def trainval(exp_dict, savedir_base, reset=False):
                                      exp_dict=exp_dict)
 
     train_loader = torch.utils.data.DataLoader(train_set,
-                              drop_last=True,
-                              shuffle=True,
-                              batch_size=exp_dict["batch_size"])
+                                               drop_last=True,
+                                               shuffle=True,
+                                               batch_size=exp_dict["batch_size"])
 
     # val set
     val_set = datasets.get_dataset(dataset_name=exp_dict["dataset"],
                                    train_flag=False,
                                    datadir=savedir_base,
                                    exp_dict=exp_dict)
-
 
     # Model
     # -----------
@@ -81,7 +80,7 @@ def trainval(exp_dict, savedir_base, reset=False):
     n_batches_per_epoch = len(train_set) / float(exp_dict["batch_size"])
     opt = optimizers.get_optimizer(opt_dict=exp_dict["opt"],
                                    params=model.parameters(),
-                                   n_batches_per_epoch =n_batches_per_epoch)
+                                   n_batches_per_epoch=n_batches_per_epoch)
 
     # Checkpoint
     # -----------
@@ -102,7 +101,8 @@ def trainval(exp_dict, savedir_base, reset=False):
 
     # Train & Val
     # ------------
-    print('Starting experiment at epoch %d/%d' % (s_epoch, exp_dict['max_epoch']))
+    print('Starting experiment at epoch %d/%d' %
+          (s_epoch, exp_dict['max_epoch']))
 
     for e in range(s_epoch, exp_dict['max_epoch']):
         # Set seed
@@ -115,11 +115,11 @@ def trainval(exp_dict, savedir_base, reset=False):
 
         # Compute train loss over train set
         score_dict["train_loss"] = metrics.compute_metric_on_dataset(model, train_set,
-                                            metric_name=exp_dict["loss_func"])
+                                                                     metric_name=exp_dict["loss_func"])
 
         # Compute val acc over val set
         score_dict["val_acc"] = metrics.compute_metric_on_dataset(model, val_set,
-                                                    metric_name=exp_dict["acc_func"])
+                                                                  metric_name=exp_dict["acc_func"])
 
         # Train over train loader
         model.train()
@@ -134,7 +134,7 @@ def trainval(exp_dict, savedir_base, reset=False):
 
             # closure for sps
             if (exp_dict["opt"]["name"] in ['sps']):
-                closure = lambda : loss_function(model, images, labels, backwards=False)
+                def closure(): return loss_function(model, images, labels, backwards=False)
                 opt.step(closure, batch=batch)
 
             # other optimizers
@@ -152,7 +152,7 @@ def trainval(exp_dict, savedir_base, reset=False):
         score_dict["n_forwards"] = opt.state["n_forwards"]
         score_dict["n_backwards"] = opt.state["n_backwards"]
         score_dict["grad_norm"] = opt.state["grad_norm"]
-        score_dict["batch_size"] =  train_loader.batch_size
+        score_dict["batch_size"] = train_loader.batch_size
         score_dict["train_epoch_time"] = e_time - s_time
 
         score_list += [score_dict]
@@ -183,16 +183,15 @@ if __name__ == '__main__':
     if args.exp_id is not None:
         # select one experiment
         savedir = os.path.join(args.savedir_base, args.exp_id)
-        exp_dict = hu.load_json(os.path.join(savedir, 'exp_dict.json'))        
-        
+        exp_dict = hu.load_json(os.path.join(savedir, 'exp_dict.json'))
+
         exp_list = [exp_dict]
-        
+
     else:
         # select exp group
         exp_list = []
         for exp_group_name in args.exp_group_list:
             exp_list += exp_configs.EXP_GROUPS[exp_group_name]
-
 
     # Run experiments
     # ---------------
@@ -201,15 +200,16 @@ if __name__ == '__main__':
         for exp_dict in exp_list:
             # do trainval
             trainval(exp_dict=exp_dict,
-                    savedir_base=args.savedir_base,
-                    reset=args.reset)
+                     savedir_base=args.savedir_base,
+                     reset=args.reset)
 
     else:
         # run experiments in parallel
-        run_command = ('python trainval.py -ei <exp_id> -sb %s' %  (args.savedir_base))
+        run_command = ('python trainval.py -ei <exp_id> -sb %s' %
+                       (args.savedir_base))
         hjb.run_exp_list_jobs(exp_list,
-                            savedir_base=args.savedir_base,
-                            workdir=os.path.dirname(os.path.realpath(__file__)),
-                            run_command=run_command,
-                            job_config=exp_configs.job_config)
-       
+                              savedir_base=args.savedir_base,
+                              workdir=os.path.dirname(
+                                  os.path.realpath(__file__)),
+                              run_command=run_command,
+                              job_config=exp_configs.job_config)
