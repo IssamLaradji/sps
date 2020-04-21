@@ -132,16 +132,11 @@ def trainval(exp_dict, savedir_base, reset=False):
 
             opt.zero_grad()
 
-            # closure for sps
-            if (exp_dict["opt"]["name"] in ['sps']):
-                def closure(): return loss_function(model, images, labels, backwards=False)
-                opt.step(closure, batch=batch)
-
-            # other optimizers
-            else:
-                loss = loss_function(model, images, labels)
-                loss.backward()
-                opt.step()
+            # closure
+            def closure(): 
+                return loss_function(model, images, labels, backwards=True)
+            
+            opt.step(closure)
 
         e_time = time.time()
 
