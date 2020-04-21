@@ -28,26 +28,28 @@ for epoch in range(100):
     opt.step(loss=loss)
 ```
 
-### 3. Mnist experiment
+### 3. Experiments
+
+#### 3.1 MNIST
 
 `python trainval.py -e mnist -sb ../results -r 1`
 
 where `-e` is the experiment group, `-sb` is the result directory.
 
-### 4. kernel experiment
+#### 3.2 Kernels
 
 `python trainval.py -e kernel -sb ../results -r 1`
 
 
-### 5. Visualize
-#### 5.1 Launch Jupyter by running the following on terminal,
+### 4. Visualize
+#### 4.1 Launch Jupyter by running the following on terminal,
 
 ```
 jupyter nbextension enable --py widgetsnbextension --sys-prefix
 jupyter notebook
 ```
 
-#### 5.2 On a Jupyter cell, run the following script,
+#### 4.2 On a Jupyter cell, run the following script,
 ```python
 from haven import haven_jupyter as hj
 from haven import haven_results as hr
