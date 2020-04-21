@@ -41,7 +41,7 @@ where `-e` is the experiment group, `-sb` is the result directory.
 `python trainval.py -e kernel -sb ../results -r 1`
 
 
-### 4. Visualize
+### 4. Results
 #### 4.1 Launch Jupyter by running the following on terminal,
 
 ```
