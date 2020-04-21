@@ -14,12 +14,14 @@ class Sps(torch.optim.Optimizer):
                  eta_max=None,
                  adapt_flag='smooth_iter',
                  fstar_flag=None,
-                 eps=1e-8):
+                 eps=1e-8,
+                 centralize_grad_norm=False):
         params = list(params)
         super().__init__(params, {})
         self.eps = eps
         self.params = params
         self.c = c
+        self.centralize_grad_norm = centralize_grad_norm
         self.eta_max = eta_max
         self.gamma = gamma
         self.init_step_size = init_step_size
@@ -60,7 +62,11 @@ class Sps(torch.optim.Optimizer):
         # save the current parameters:
         params_current = copy.deepcopy(self.params)
         grad_current = get_grad_list(self.params)
-        grad_norm = compute_grad_norm(grad_current)
+
+        if self.centralize_grad_norm:
+            grad_norm = compute_grad_norm_centralized(grad_current)
+        else:
+            grad_norm = compute_grad_norm(grad_current)
 
         if grad_norm < 1e-8:
             step_size = 0.
@@ -104,6 +110,21 @@ class Sps(torch.optim.Optimizer):
 
 # utils
 # ------------------------------
+def compute_grad_norm_centralized(grad_list):
+    """
+    # Apply gradient centralization
+    """
+    grad_norm = 0.
+    for g in grad_list:
+        if g is None:
+            continue
+        
+        if g.dim() > 1:  
+            g.add_(-g.mean(dim = tuple(range(1,g.dim())), keepdim = True))
+            
+        grad_norm += torch.sum(torch.mul(g, g))
+    grad_norm = torch.sqrt(grad_norm)
+    return grad_norm
 
 
 def compute_grad_norm(grad_list):

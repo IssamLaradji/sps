@@ -20,7 +20,8 @@ def get_optimizer(opt_dict, params, n_batches_per_epoch=None):
                         adapt_flag=opt_dict.get('adapt_flag'),
                         fstar_flag=opt_dict.get('fstar_flag'),
                         eta_max=opt_dict.get('eta_max'),
-                        eps=opt_dict.get('eps', 0))
+                        eps=opt_dict.get('eps', 0),
+                        centralize_grad_norm=opt_dict.get("centralize_grad_norm", False), )
     # others        
     elif opt_name == "adam":
         opt = torch.optim.Adam(params, lr=opt_dict.get('lr', 1e-3))

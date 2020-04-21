@@ -38,7 +38,7 @@ class Test(unittest.TestCase):
         
         opt = sps.Sps(model.parameters())
 
-        for epoch in range(20):
+        for epoch in range(10):
             opt.zero_grad()
             loss = torch.nn.MSELoss() (model(X), Y)
             loss.backward()
