@@ -40,10 +40,40 @@ where `-e` is the experiment group, `-sb` is the result directory.
 
 
 ### 5. Visualize
+#### 5.1 Launch Jupyter by running the following on terminal,
 
-Create the jupyter by running `create_jupyter.py`, and run the first cell to get plots, 
+```
+jupyter nbextension enable --py widgetsnbextension --sys-prefix
+jupyter notebook
+```
 
-![alt text](results/results.png)
+#### 5.2 On a Jupyter cell, run the following script,
+```
+from haven import haven_jupyter as hj
+from haven import haven_results as hr
+from haven import haven_utils as hu
+
+# path to where the experiments got saved
+savedir_base = '../results'
+
+# filter exps
+filterby_list = [{'dataset':'cifar10', 'opt':{'c':0.2}}, 
+                    {'dataset':'cifar10', 'opt':{'name':'adam'}}]
+
+
+legend_list = ['opt.name']
+title_list = ['dataset', 'model']
+y_metrics = ['train_loss', 'val_acc']
+
+# get experiments
+rm = hr.ResultManager(savedir_base=savedir_base, 
+                      filterby_list=filterby_list, 
+                      verbose=0)
+# launch dashboard
+hj.get_dashboard(rm, vars(), wide_display=True)
+```
+
+![alt text](results/cifar10.png)
 
 
 #### Citation

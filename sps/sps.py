@@ -11,7 +11,7 @@ class Sps(torch.optim.Optimizer):
                  init_step_size=1,
                  c=0.5,
                  gamma=2.0,
-                 eta_max=10,
+                 eta_max=None,
                  adapt_flag='smooth_iter',
                  fstar_flag=None,
                  eps=1e-8):
@@ -25,7 +25,6 @@ class Sps(torch.optim.Optimizer):
         self.init_step_size = init_step_size
         self.adapt_flag = adapt_flag
         self.state['step'] = 0
-        self.state['step_size_avg'] = 0.
 
         self.state['step_size'] = init_step_size
         self.step_size_max = 0.
@@ -93,12 +92,6 @@ class Sps(torch.optim.Optimizer):
             sgd_update(self.params, step_size, params_current, grad_current)
 
         # update state with metrics
-        if self.state['step'] % int(self.n_batches_per_epoch) == 1:
-            # reset step size avg for each new epoch
-            self.state['step_size_avg'] = 0.
-
-        self.state['step_size_avg'] += (step_size / self.n_batches_per_epoch)
-
         self.state['n_forwards'] += 1
         self.state['n_backwards'] += 1
         self.state['step_size'] = step_size

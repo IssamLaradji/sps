@@ -199,6 +199,7 @@ if __name__ == '__main__':
                      reset=args.reset)
 
     else:
+        import job_config
         # run experiments in parallel
         run_command = ('python trainval.py -ei <exp_id> -sb %s' %
                        (args.savedir_base))
@@ -207,4 +208,4 @@ if __name__ == '__main__':
                               workdir=os.path.dirname(
                                   os.path.realpath(__file__)),
                               run_command=run_command,
-                              job_config=exp_configs.job_config)
+                              job_config=job_config.job_config)

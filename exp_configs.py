@@ -12,7 +12,7 @@ kernel_datasets = ["mushrooms",
 run_list = [0]
 
 # define optimizers
-c_list = [0.2, 0.5]
+c_list = [0.2]
 sps_list = []
 
 for c, adapt_flag in itertools.product(c_list, ['smooth_iter']):
@@ -69,8 +69,8 @@ EXP_GROUPS['deep'] = (hu.cartesian_exp_group({"dataset":["cifar10"],
                                         "runs":run_list})
                             )
 
-EXP_GROUPS['cifar'] = hu.cartesian_exp_group({"dataset":["cifar100"],
-                                "model":["resnet34_100"],
+EXP_GROUPS['cifar'] = hu.cartesian_exp_group({"dataset":["cifar10"],
+                                "model":["resnet34"],
                                 "loss_func": ["softmax_loss"],
                                 "opt": opt_list,
                                 "acc_func":["softmax_accuracy"],
@@ -125,11 +125,3 @@ EXP_GROUPS['syn'] = (hu.cartesian_exp_group({"dataset":['syn'],
                 "max_epoch":[50],
                 "runs":run_list}))
 
-
-job_config = {'volume': ['/mnt:/mnt'],
-                'image': 'docker_image',
-                'bid': '5',
-                'restartable': '1',
-                'gpu': '1',
-                'mem': '32',
-                'cpu': '2'}
