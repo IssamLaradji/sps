@@ -62,15 +62,15 @@ savedir_base = '../results'
 filterby_list = [{'dataset':'cifar10', 'opt':{'c':0.2}}, 
                     {'dataset':'cifar10', 'opt':{'name':'adam'}}]
 
-
-legend_list = ['opt.name']
-title_list = ['dataset', 'model']
-y_metrics = ['train_loss', 'val_acc']
-
 # get experiments
 rm = hr.ResultManager(savedir_base=savedir_base, 
                       filterby_list=filterby_list, 
                       verbose=0)
+# dashboard variables
+legend_list = ['opt.name']
+title_list = ['dataset', 'model']
+y_metrics = ['train_loss', 'val_acc']
+
 # launch dashboard
 hj.get_dashboard(rm, vars(), wide_display=True)
 ```
