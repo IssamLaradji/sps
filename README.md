@@ -48,7 +48,7 @@ jupyter notebook
 ```
 
 #### 5.2 On a Jupyter cell, run the following script,
-```
+```python
 from haven import haven_jupyter as hj
 from haven import haven_results as hr
 from haven import haven_utils as hu
