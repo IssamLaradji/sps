@@ -21,6 +21,7 @@ def get_optimizer(opt_dict, params, n_batches_per_epoch=None):
                         fstar_flag=opt_dict.get('fstar_flag'),
                         eta_max=opt_dict.get('eta_max'),
                         eps=opt_dict.get('eps', 0),
+                        centralize_grad=opt_dict.get("centralize_grad", False),
                         centralize_grad_norm=opt_dict.get("centralize_grad_norm", False), )
     # others        
     elif opt_name == "adam":

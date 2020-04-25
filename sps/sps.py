@@ -15,13 +15,19 @@ class Sps(torch.optim.Optimizer):
                  adapt_flag='smooth_iter',
                  fstar_flag=None,
                  eps=1e-8,
-                 centralize_grad_norm=False):
+                 centralize_grad_norm=False,
+                 centralize_grad=False):
         params = list(params)
         super().__init__(params, {})
         self.eps = eps
         self.params = params
         self.c = c
         self.centralize_grad_norm = centralize_grad_norm
+        self.centralize_grad = centralize_grad
+
+        if centralize_grad:
+            assert self.centralize_grad_norm is False
+
         self.eta_max = eta_max
         self.gamma = gamma
         self.init_step_size = init_step_size
@@ -60,13 +66,8 @@ class Sps(torch.optim.Optimizer):
             assert closure is None, 'if loss is provided then closure should beNone'
 
         # save the current parameters:
-        params_current = copy.deepcopy(self.params)
-        grad_current = get_grad_list(self.params)
-
-        if self.centralize_grad_norm:
-            grad_norm = compute_grad_norm_centralized(grad_current)
-        else:
-            grad_norm = compute_grad_norm(grad_current)
+        grad_current = get_grad_list(self.params, centralize_grad=self.centralize_grad)
+        grad_norm = compute_grad_norm(grad_current, centralize_grad_norm=self.centralize_grad_norm)
 
         if grad_norm < 1e-8:
             step_size = 0.
@@ -95,7 +96,7 @@ class Sps(torch.optim.Optimizer):
                                  self.adapt_flag)
 
             # update with step size
-            sgd_update(self.params, step_size, params_current, grad_current)
+            sgd_update(self.params, step_size, grad_current)
 
         # update state with metrics
         self.state['n_forwards'] += 1
@@ -110,39 +111,36 @@ class Sps(torch.optim.Optimizer):
 
 # utils
 # ------------------------------
-def compute_grad_norm_centralized(grad_list):
-    """
-    # Apply gradient centralization
-    """
+def compute_grad_norm(grad_list, centralize_grad_norm=False):
     grad_norm = 0.
     for g in grad_list:
         if g is None:
             continue
-        
-        if g.dim() > 1:  
+
+        if g.dim() > 1 and centralize_grad_norm: 
+            # centralize grads 
             g.add_(-g.mean(dim = tuple(range(1,g.dim())), keepdim = True))
-            
+
         grad_norm += torch.sum(torch.mul(g, g))
     grad_norm = torch.sqrt(grad_norm)
     return grad_norm
 
 
-def compute_grad_norm(grad_list):
-    grad_norm = 0.
-    for g in grad_list:
-        if g is None:
-            continue
-        grad_norm += torch.sum(torch.mul(g, g))
-    grad_norm = torch.sqrt(grad_norm)
-    return grad_norm
+def get_grad_list(params, centralize_grad=False):
+    grad_list = []
+    for p in params:
+        g = p.grad.data
+        
+        if len(list(g.size()))>1 and centralize_grad:
+            # centralize grads
+            g.add_(-g.mean(dim = tuple(range(1,len(list(g.size())))), 
+                   keepdim = True))
+                   
+        grad_list += [g]        
+                   
+    return grad_list
 
 
-def get_grad_list(params):
-    return [p.grad for p in params]
-
-
-def sgd_update(params, step_size, params_current, grad_current):
-    zipped = zip(params, params_current, grad_current)
-
-    for p_next, p_current, g_current in zipped:
-        p_next.data = p_current - step_size * g_current
+def sgd_update(params, step_size, grad_current):
+    for p, g in zip(params, grad_current):
+        p.data.add_(- step_size, g)
