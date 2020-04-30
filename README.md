@@ -93,4 +93,4 @@ It is a collaborative work between labs at MILA, Element AI, and UBC.
 
 #### Credits
 
-- Thank you [Less Wright](https://github.com/lessw2020) for incorporating the [gradient centralization method](https://arxiv.org/pdf/2004.01461.pdf), it makes a lot of sense.
+- Thank you [Less Wright](https://github.com/lessw2020) for incorporating the [gradient centralization method](https://arxiv.org/pdf/2004.01461.pdf), it seems to improve the results in some experiments.
