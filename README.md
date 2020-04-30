@@ -90,3 +90,7 @@ hj.get_dashboard(rm, vars(), wide_display=True)
 ```
 
 It is a collaborative work between labs at MILA, Element AI, and UBC.
+
+#### Credits
+
+- Thank you @lessw2020 for incorporating the gradient centralization method (https://arxiv.org/pdf/2004.01461.pdf), it makes a lot of sense.
