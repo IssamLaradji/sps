@@ -129,12 +129,15 @@ def compute_grad_norm(grad_list, centralize_grad_norm=False):
 def get_grad_list(params, centralize_grad=False):
     grad_list = []
     for p in params:
-        g = p.grad.data
-        
-        if len(list(g.size()))>1 and centralize_grad:
-            # centralize grads
-            g.add_(-g.mean(dim = tuple(range(1,len(list(g.size())))), 
-                   keepdim = True))
+        g = p.grad
+        if g is None:
+            g = 0.
+        else:
+            g = p.grad.data
+            if len(list(g.size()))>1 and centralize_grad:
+                # centralize grads
+                g.add_(-g.mean(dim = tuple(range(1,len(list(g.size())))), 
+                       keepdim = True))
                    
         grad_list += [g]        
                    
