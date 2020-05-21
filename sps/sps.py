@@ -114,7 +114,7 @@ class Sps(torch.optim.Optimizer):
 def compute_grad_norm(grad_list, centralize_grad_norm=False):
     grad_norm = 0.
     for g in grad_list:
-        if g is None:
+        if g is None or (isinstance(g, float) and g == 0.):
             continue
 
         if g.dim() > 1 and centralize_grad_norm: 
@@ -146,4 +146,6 @@ def get_grad_list(params, centralize_grad=False):
 
 def sgd_update(params, step_size, grad_current):
     for p, g in zip(params, grad_current):
+        if isinstance(g, float) and g == 0.:
+            continue
         p.data.add_(- step_size, g)
