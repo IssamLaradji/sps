@@ -9,7 +9,7 @@ Install the sps optimizer.
 `pip install git+https://github.com/IssamLaradji/sps.git`
 
 
-Install the [Haven library](https://github.com/IssamLaradji/haven) for managing the experiments.
+Install the [Haven library](https://github.com/haven-ai/haven) for managing the experiments.
 
 `pip install -r requirements.txt`
 
