@@ -3,15 +3,8 @@
 Fast convergence with SPS optimizer. The first efficient stochastic variant of the classical Polyak step-size for SGD
 
 
-### 1. Install requirements
-Install the sps optimizer.
-
+### 1. Installation
 `pip install git+https://github.com/IssamLaradji/sps.git`
-
-
-Install the [Haven library](https://github.com/haven-ai/haven-ai) for managing the experiments.
-
-`pip install -r requirements.txt`
 
 ### 2. Usage
 Use `Sps` in your code by adding the following script.
