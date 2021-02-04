@@ -148,4 +148,4 @@ def sgd_update(params, step_size, grad_current):
     for p, g in zip(params, grad_current):
         if isinstance(g, float) and g == 0.:
             continue
-        p.data.add_(- step_size, g)
+        p.data.add_(other=g, alpha=- step_size)
