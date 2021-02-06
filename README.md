@@ -1,4 +1,5 @@
 ## SPS - Stochastic Polyak Step-size [[paper]](https://arxiv.org/pdf/2002.10542.pdf)
+### Accepted at AISTATS 2021
 
 Fast convergence with SPS optimizer. The first efficient stochastic variant of the classical Polyak step-size for SGD
 
