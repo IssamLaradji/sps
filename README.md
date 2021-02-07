@@ -15,15 +15,16 @@ import sps
 opt = sps.Sps(model.parameters())
 
 for epoch in range(100):
-    # create loss closure
-    def closure():
-      loss = torch.nn.MSELoss()(model(X), y)
-      loss.backward()
-      return loss
-    
-    # update parameters
-    opt.zero_grad()
-    opt.step(closure=closure)
+    for X, y in loader:
+        # create loss closure
+        def closure():
+          loss = torch.nn.MSELoss()(model(X), y)
+          loss.backward()
+          return loss
+
+        # update parameters
+        opt.zero_grad()
+        opt.step(closure=closure)
 ```
 
 ### 3. Experiments
