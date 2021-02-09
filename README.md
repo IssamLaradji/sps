@@ -3,6 +3,7 @@
 
 Fast convergence with SPS optimizer. The first efficient stochastic variant of the classical Polyak step-size for SGD
 
+Check out these other line search optimizers: [[sls]](https://github.com/IssamLaradji/sls), [[AdaSls]](https://github.com/IssamLaradji/ada_sls)
 
 ### 1. Installation
 `pip install git+https://github.com/IssamLaradji/sps.git`
