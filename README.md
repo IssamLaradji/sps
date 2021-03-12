@@ -30,52 +30,27 @@ for epoch in range(100):
 
 ### 3. Experiments
 
-#### 3.1 MNIST
+#### Training
 
-`python trainval.py -e mnist -sb ../results -r 1`
-
-where `-e` is the experiment group, `-sb` is the result directory.
-
-#### 3.2 Kernels
-
-`python trainval.py -e kernel -sb ../results -r 1`
-
-
-### 4. Results
-#### 4.1 Launch Jupyter by running the following on terminal,
-
-```
-jupyter nbextension enable --py widgetsnbextension --sys-prefix
-jupyter notebook
-```
-
-#### 4.2 On a Jupyter cell, run the following script,
 ```python
-from haven import haven_jupyter as hj
-from haven import haven_results as hr
-from haven import haven_utils as hu
-
-# path to where the experiments got saved
-savedir_base = '../results'
-
-# filter exps
-filterby_list = [{'dataset':'cifar10', 'opt':{'c':0.2}}, 
-                    {'dataset':'cifar10', 'opt':{'name':'adam'}}]
-
-# get experiments
-rm = hr.ResultManager(savedir_base=savedir_base, 
-                      filterby_list=filterby_list, 
-                      verbose=0)
-# dashboard variables
-legend_list = ['opt.name']
-title_list = ['dataset', 'model']
-y_metrics = ['train_loss', 'val_acc']
-
-# launch dashboard
-hj.get_dashboard(rm, vars(), wide_display=True)
+python trainval.py  -e  [Experiment group to run like 'mnist, cifar10, cifar100'] 
+                    -sb [Directory where the experiments are saved]
+                    -d  [Directory where the datasets are saved]
+                    -r  [Flag for whether to save the experiments]
+                    -j  [Scheduler for launching the experiments. 
+                         Use None for running them on local maching]
+                    -v  [File name where a jupyter is saved for visualization]
 ```
 
-![alt text](results/cifar10.png)
+Example:
+
+```
+python trainval.py -e mnist -sb .results -d ../results -v results.ipynb -r 1
+```
+
+#### Visualizing
+
+Open `results.ipynb` and run the first cell to get the following visualization of results.
 
 
 

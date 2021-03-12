@@ -1,345 +1,256 @@
+# -*- coding: utf-8 -*-
+
+import os, pprint, tqdm
+import numpy as np
+import pandas as pd
+from haven import haven_utils as hu 
+from haven import haven_img as hi
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import sys
+from . import base_classifiers
+from . import optimizers
 
-from torch import nn
-from torch.nn import functional as F
-import math
-import torchvision.models as models
 
+def get_model(train_loader, exp_dict, device):
+    return Classifier(train_loader, exp_dict, device)
 
-def get_model(model_name, train_set=None):
-    if model_name in ["linear", "logistic"]:
-        batch = train_set[0]
-        model = LinearRegression(input_dim=batch['images'].shape[0], output_dim=1)
-
-    if model_name == "mlp":
-        model = Mlp(n_classes=10, dropout=False)
     
-    if model_name == "mlp_dropout":
-        model = Mlp(n_classes=10, dropout=True)
-
-    elif model_name == "resnet34":
-        model = ResNet([3, 4, 6, 3], num_classes=10)
-
-    elif model_name == "resnet34_100":
-        model = ResNet([3, 4, 6, 3], num_classes=100)
-
-    elif model_name == "resnet18":
-        model = models.resnet18()
-
-    elif model_name == "resnet50":
-        model = models.resnet50()
-    
-    elif model_name == "resnet101":
-        model = models.resnet101()
-    
-    elif model_name == "resnet152":
-        model = models.resnet152()
-    
-    elif model_name == "wide_resnet101":
-        model = models.wide_resnet101_2()
-
-    elif model_name == "densenet121":
-        model = DenseNet121(num_classes=10)
-
-    elif model_name == "densenet121_100":
-        model = DenseNet121(num_classes=100)
-
-    elif model_name == "matrix_fac_1":
-        model = LinearNetwork(6, [1], 10, bias=False)
+class Classifier(torch.nn.Module):
+    def __init__(self, train_loader, exp_dict, device):
+        super().__init__()
+        self.exp_dict = exp_dict
+        self.device = device
         
-    elif model_name == "matrix_fac_4":
-        model = LinearNetwork(6, [4], 10, bias=False)
+        self.model_base = base_classifiers.get_classifier(exp_dict['model'], train_set=train_loader.dataset)
+
+        # Load Optimizer
+        self.to(device=self.device)
+        self.opt = optimizers.get_optimizer(opt_dict=exp_dict["opt"],
+                                       params=self.parameters(),
+                                       train_loader=train_loader,                                
+                                       exp_dict=exp_dict)
+        
+    def train_on_loader(self, train_loader):
+        self.train()
+
+        pbar = tqdm.tqdm(train_loader)
+        for batch in pbar:
+            score_dict = self.train_on_batch(batch)
+            pbar.set_description(f'Training - {score_dict["train_loss"]:.3f}')
+            
+        return score_dict
+
+    def get_state_dict(self):
+        state_dict = {"model": self.model_base.state_dict(),
+                      "opt": self.opt.state_dict()}
+
+        return state_dict
+
+    def set_state_dict(self, state_dict):
+        self.model_base.load_state_dict(state_dict["model"])
+        self.opt.load_state_dict(state_dict["opt"])
     
-    elif model_name == "matrix_fac_10":
-        model = LinearNetwork(6, [10], 10, bias=False)
+    def val_on_dataset(self, dataset, metric, name):
+        self.eval()
 
-    elif model_name == "linear_fac":
-        model = LinearNetwork(6, [], 10, bias=False)
+        metric_function = get_metric_function(metric)
+        loader = torch.utils.data.DataLoader(dataset, drop_last=False, batch_size=self.exp_dict['batch_size'])
 
-    return model
+        score_sum = 0.
+        pbar = tqdm.tqdm(loader)
+        for batch in pbar:
+            images, labels = batch["images"].to(device=self.device), batch["labels"].to(device=self.device)
+            score_sum += metric_function(self.model_base, images, labels).item() * images.shape[0]    
+            score = float(score_sum / len(loader.dataset))
+            
+            pbar.set_description(f'Validating {metric}: {score:.3f}')
 
-# =====================================================
-# Linear Network
-class LinearNetwork(nn.Module):
-    def __init__(self, input_size, hidden_sizes, output_size, bias=True):
-        super().__init__()
+        return {f'{dataset.split}_{name}': score}
 
-        # iterate averaging:
-        self._prediction_params = None
 
-        self.input_size = input_size
-        if output_size:
-            self.output_size = output_size
-            self.squeeze_output = False
-        else :
-            self.output_size = 1
-            self.squeeze_output = True
+    def val_on_loader(self, batch):
+        pass 
+    
+    def train_on_batch(self, batch):
+        self.opt.zero_grad()
+        loss_function = get_metric_function(self.exp_dict['loss_func'])
+        images, labels = batch["images"].to(device=self.device), batch["labels"].to(device=self.device)
+        use_backpack = False
 
-        if len(hidden_sizes) == 0:
-            self.hidden_layers = []
-            self.output_layer = nn.Linear(self.input_size, self.output_size, bias=bias)
+        name = self.exp_dict['opt']['name']
+        if (name in ['adaptive_second']):
+            closure = lambda for_backtracking=False : loss_function(self.model_base, images, labels, backwards=False, 
+                                                                    backpack=(use_backpack and not for_backtracking))
+            loss = self.opt.step(closure)
+                    
+        elif (name in ["sgd_armijo", "ssn", 'adaptive_first', 'l4', 'ali_g', 'sgd_goldstein', 'sgd_nesterov', 'sgd_polyak', 'seg']):
+            closure = lambda : loss_function(self.model_base, images, labels, backwards=False, backpack=use_backpack)
+            loss = self.opt.step(closure)
+
         else:
-            self.hidden_layers = nn.ModuleList([nn.Linear(in_size, out_size, bias=bias) for in_size, out_size in zip([self.input_size] + hidden_sizes[:-1], hidden_sizes)])
-            self.output_layer = nn.Linear(hidden_sizes[-1], self.output_size, bias=bias)
-
-    def forward(self, x):
-        '''
-            x: The input patterns/features.
-        '''
-        x = x.view(-1, self.input_size)
-        out = x
-
-        for layer in self.hidden_layers:
-            Z = layer(out)
-            # no activation in linear network.
-            out = Z
-
-        logits = self.output_layer(out)
-        if self.squeeze_output:
-            logits = torch.squeeze(logits)
-
-        return logits
-
-# =====================================================
-# Logistic
-class LinearRegression(torch.nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super().__init__()
-        self.linear = torch.nn.Linear(input_dim, output_dim, bias=False)
-
-    def forward(self, x):
-        outputs = self.linear(x)
-        return outputs
-
-# =====================================================
-# MLP
-class Mlp(nn.Module):
-    def __init__(self, input_size=784,
-                 hidden_sizes=[512, 256],
-                 n_classes=10,
-                 bias=True, dropout=False):
-        super().__init__()
-
-        self.dropout=dropout
-        self.input_size = input_size
-        self.hidden_layers = nn.ModuleList([nn.Linear(in_size, out_size, bias=bias) for
-                                            in_size, out_size in zip([self.input_size] + hidden_sizes[:-1], hidden_sizes)])
-        self.output_layer = nn.Linear(hidden_sizes[-1], n_classes, bias=bias)
-
-    def forward(self, x):
-        x = x.view(-1, self.input_size)
-        out = x
-        for layer in self.hidden_layers:
-            Z = layer(out)
-            out = F.relu(Z)
-
-            if self.dropout:
-                out = F.dropout(out, p=0.5)
-
-        logits = self.output_layer(out)
-
-        return logits
-
-# =====================================================
-# ResNet
-class ResNet(nn.Module):
-    def __init__(self, num_blocks, num_classes=10):
-        super().__init__()
-        block = BasicBlock
-        self.in_planes = 64
-
-        self.conv1 = nn.Conv2d(
-            3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = nn.Linear(512 * block.expansion, num_classes)
-
-    def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
-            self.in_planes = planes * block.expansion
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
-        return out
+            closure = lambda : loss_function(self.model_base, images, labels, backwards=True, backpack=use_backpack)
+            loss = self.opt.step(closure=closure)
+            
+        return {'train_loss': float(loss)}
 
 
-class BasicBlock(nn.Module):
-    expansion = 1
+        
 
-    def __init__(self, in_planes, planes, stride=1):
-        super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(
-            in_planes,
-            planes,
-            kernel_size=3,
-            stride=stride,
-            padding=1,
-            bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(
-            planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+# Metrics
+def get_metric_function(metric):
+    if metric == "logistic_accuracy":
+        return logistic_accuracy
 
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion * planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(
-                    in_planes,
-                    self.expansion * planes,
-                    kernel_size=1,
-                    stride=stride,
-                    bias=False), nn.BatchNorm2d(self.expansion * planes))
+    if metric == "softmax_accuracy":
+        return softmax_accuracy
 
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        out = F.relu(out)
-        return out
+    elif metric == "softmax_loss":
+        return softmax_loss
 
+    elif metric == "logistic_l2_loss":
+        return logistic_l2_loss
+    
+    elif metric == "squared_hinge_l2_loss":
+        return squared_hinge_l2_loss
 
-class Bottleneck(nn.Module):
-    expansion = 4
+    elif metric == "squared_l2_loss":
+        return squared_l2_loss
 
-    def __init__(self, in_planes, planes, stride=1):
-        super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(
-            planes,
-            planes,
-            kernel_size=3,
-            stride=stride,
-            padding=1,
-            bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(
-            planes, self.expansion * planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+    elif metric == 'perplexity':
+        return lambda *args, **kwargs: torch.exp(softmax_loss(*args, **kwargs)) 
+ 
+    elif metric == "logistic_loss":
+        return logistic_loss
 
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion * planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(
-                    in_planes,
-                    self.expansion * planes,
-                    kernel_size=1,
-                    stride=stride,
-                    bias=False), nn.BatchNorm2d(self.expansion * planes))
+    elif metric == "squared_hinge_loss":
+        return squared_hinge_loss
 
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = self.bn3(self.conv3(out))
-        out += self.shortcut(x)
-        out = F.relu(out)
-        return out
+    elif metric == "mse":
+        return mse_score
+
+    elif metric == "squared_loss":
+        return squared_loss
 
 
-class Bottleneck_DenseNet(nn.Module):
-    def __init__(self, in_planes, growth_rate):
-        super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_planes)
-        self.conv1 = nn.Conv2d(in_planes, 4*growth_rate, kernel_size=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(4*growth_rate)
-        self.conv2 = nn.Conv2d(4*growth_rate, growth_rate, kernel_size=3, padding=1, bias=False)
 
-    def forward(self, x):
-        out = self.conv1(F.relu(self.bn1(x)))
-        out = self.conv2(F.relu(self.bn2(out)))
-        out = torch.cat([out,x], 1)
-        return out
+def logistic_l2_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    logits = model(images)
+    criterion = torch.nn.BCEWithLogitsLoss(reduction=reduction)
+    loss = criterion(logits.view(-1), labels.view(-1))
 
+    w = 0.
+    for p in model.parameters():
+        w += (p**2).sum()
 
-class Transition(nn.Module):
-    def __init__(self, in_planes, out_planes):
-        super(Transition, self).__init__()
-        self.bn = nn.BatchNorm2d(in_planes)
-        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=1, bias=False)
+    loss += 1e-4 * w
 
-    def forward(self, x):
-        out = self.conv(F.relu(self.bn(x)))
-        out = F.avg_pool2d(out, 2)
-        return out
+    if backwards and loss.requires_grad:
+        loss.backward()
 
-class DenseNet(nn.Module):
-    def __init__(self, block, nblocks, growth_rate=12, reduction=0.5, num_classes=10):
-        super().__init__()
-        self.growth_rate = growth_rate
+    return loss
+    
+def softmax_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    logits = model(images)
+    criterion = torch.nn.CrossEntropyLoss(reduction=reduction)
+    if backpack:
+        criterion = extend(criterion)
+    loss = criterion(logits, labels.long().view(-1))
 
-        num_planes = 2*growth_rate
-        self.conv1 = nn.Conv2d(3, num_planes, kernel_size=3, padding=1, bias=False)
+    if backwards and loss.requires_grad:
+        loss.backward()
 
-        self.dense1 = self._make_dense_layers(block, num_planes, nblocks[0])
-        num_planes += nblocks[0]*growth_rate
-        out_planes = int(math.floor(num_planes*reduction))
-        self.trans1 = Transition(num_planes, out_planes)
-        num_planes = out_planes
+    return loss
 
-        self.dense2 = self._make_dense_layers(block, num_planes, nblocks[1])
-        num_planes += nblocks[1]*growth_rate
-        out_planes = int(math.floor(num_planes*reduction))
-        self.trans2 = Transition(num_planes, out_planes)
-        num_planes = out_planes
+def logistic_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    logits = model(images)
+    criterion = torch.nn.BCEWithLogitsLoss(reduction=reduction)
+    if backpack:
+        criterion = extend(criterion)
+    loss = criterion(logits.view(-1), labels.float().view(-1))
 
-        self.dense3 = self._make_dense_layers(block, num_planes, nblocks[2])
-        num_planes += nblocks[2]*growth_rate
-        out_planes = int(math.floor(num_planes*reduction))
-        self.trans3 = Transition(num_planes, out_planes)
-        num_planes = out_planes
+    if backwards and loss.requires_grad:
+        loss.backward()
 
-        self.dense4 = self._make_dense_layers(block, num_planes, nblocks[3])
-        num_planes += nblocks[3]*growth_rate
+    return loss
 
-        self.bn = nn.BatchNorm2d(num_planes)
-        self.linear = nn.Linear(num_planes, num_classes)
+def squared_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    logits = model(images)
+    criterion = torch.nn.MSELoss(reduction=reduction)
+    if backpack:
+        criterion = extend(criterion)
+    loss = criterion(logits.view(-1), labels.view(-1))
 
-    def _make_dense_layers(self, block, in_planes, nblock):
-        layers = []
-        for i in range(nblock):
-            layers.append(block(in_planes, self.growth_rate))
-            in_planes += self.growth_rate
-        return nn.Sequential(*layers)
+    if backwards and loss.requires_grad:
+        loss.backward()
 
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.trans1(self.dense1(out))
-        out = self.trans2(self.dense2(out))
-        out = self.trans3(self.dense3(out))
-        out = self.dense4(out)
-        out = F.avg_pool2d(F.relu(self.bn(out)), 4)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
-        return out
+    return loss
 
-def DenseNet121(num_classes):
-    return DenseNet(Bottleneck_DenseNet, [6,12,24,16], growth_rate=32,
-        num_classes=num_classes)
+def mse_score(model, images, labels):
+    logits = model(images).view(-1)
+    mse = ((logits - labels.view(-1))**2).float().mean()
 
-def DenseNet169():
-    return DenseNet(Bottleneck_DenseNet, [6,12,32,32], growth_rate=32)
+    return mse
 
-def DenseNet201():
-    return DenseNet(Bottleneck_DenseNet, [6,12,48,32], growth_rate=32)
+def squared_hinge_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    margin=1.
+    logits = model(images).view(-1)
 
-def DenseNet161():
-    return DenseNet(Bottleneck_DenseNet, [6,12,36,24], growth_rate=48)
+    y = 2*labels - 1
 
-def densenet_cifar():
-    return DenseNet(Bottleneck_DenseNet, [6,12,24,16], growth_rate=12)
+    loss = (torch.max( torch.zeros_like(y) , 
+                torch.ones_like(y) - torch.mul(y, logits)))**2
+
+    if reduction == "mean":
+        loss = torch.mean(loss)
+    elif reduction == "sum":
+        loss = torch.sum(loss)
+    
+    if backwards and loss.requires_grad:
+        loss.backward()
+
+    return loss
+
+def add_l2(model):
+    w = 0.
+    for p in model.parameters():
+        w += (p**2).sum()
+
+    loss = 1e-4 * w
+
+    return loss
+
+def squared_hinge_l2_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    loss = squared_hinge_loss(model, images, labels, backwards=False, reduction=reduction)
+    loss += add_l2(model)
+
+    if backwards and loss.requires_grad:
+        loss.backward()
+
+    return loss
+
+def squared_l2_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
+    loss = squared_loss(model, images, labels, backwards=False, reduction=reduction)
+    loss += add_l2(model)
+    
+    if backwards and loss.requires_grad:
+        loss.backward()
+
+    return loss
+
+def logistic_accuracy(model, images, labels):
+    logits = torch.sigmoid(model(images)).view(-1)
+    pred_labels = (logits > 0.5).float().view(-1)
+    acc = (pred_labels == labels).float().mean()
+
+    return acc
+
+def softmax_accuracy(model, images, labels):
+    logits = model(images)
+    pred_labels = logits.argmax(dim=1)
+    acc = (pred_labels == labels).float().mean()
+
+    return acc
 
 

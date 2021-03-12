@@ -5,7 +5,7 @@ import copy
 from sps import Sps
 
 
-def get_optimizer(opt_dict, params, n_batches_per_epoch=None):
+def get_optimizer(opt_dict, params, train_loader, exp_dict):
     """
     opt: name or dict
     params: model parameters
@@ -13,7 +13,9 @@ def get_optimizer(opt_dict, params, n_batches_per_epoch=None):
     """
     opt_name = opt_dict['name']
     # our optimizers   
-    n_batches_per_epoch = opt_dict.get("n_batches_per_epoch") or n_batches_per_epoch    
+    n_train = len(train_loader.dataset)
+    batch_size = train_loader.batch_size
+    n_batches_per_epoch = n_train / float(batch_size) 
     if opt_name == 'sps':
         opt = Sps(params, c=opt_dict["c"], 
                         n_batches_per_epoch=n_batches_per_epoch, 

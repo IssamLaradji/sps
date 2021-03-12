@@ -4,9 +4,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 .idea
+.results
 # C extensions
 *.so
 .vscode
+results.ipynb
 # Distribution / packaging
 .Python
 build/

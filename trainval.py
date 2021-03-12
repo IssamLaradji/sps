@@ -1,211 +1,154 @@
-import os
-import argparse
-import torchvision
-import pandas as pd
 import torch
-import numpy as np
-import time
-import pprint
+import torchvision
 import tqdm
+import pandas as pd
+import pprint
+import math
+import itertools
+import os, sys
+import pylab as plt
 import exp_configs
-
+import time
+import numpy as np
+import torch.nn as nn
+from src import models
+from src import datasets
+from src import optimizers
 from src import utils as ut
-from src import datasets, models, optimizers, metrics
+from src import metrics
+from haven import haven_wizard as hw
+import argparse
+
+from torch.backends import cudnn
+from torch.nn import functional as F
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import RandomSampler
+from torch.utils.data.dataloader import default_collate
+
+# cudnn.benchmark = True
 
 from haven import haven_utils as hu
 from haven import haven_results as hr
 from haven import haven_chk as hc
-from haven import haven_jupyter as hj
-from haven import haven_jobs as hjb
+import shutil
+
+import pprint
 
 
-def trainval(exp_dict, savedir_base, reset=False):
-    # bookkeeping
-    # ---------------
-
-    # get experiment directory
-    exp_id = hu.hash_dict(exp_dict)
-    savedir = os.path.join(savedir_base, exp_id)
-
-    if reset:
-        # delete and backup experiment
-        hc.delete_experiment(savedir, backup_flag=True)
-
-    # create folder and save the experiment dictionary
-    os.makedirs(savedir, exist_ok=True)
-    hu.save_json(os.path.join(savedir, 'exp_dict.json'), exp_dict)
-    pprint.pprint(exp_dict)
-    print('Experiment saved in %s' % savedir)
-
-    # set seed
-    # ---------------
+def trainval(exp_dict, savedir, args):
+    # Set seed and device
+    # ===================
     seed = 42 + exp_dict['runs']
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if args.cuda:
+        device = 'cuda'
+        torch.cuda.manual_seed_all(seed)
+        assert torch.cuda.is_available(), 'cuda is not, available please run with "-c 0"'
+    else:
+        device = 'cpu'
 
-    # Dataset
-    # -----------
+    print('Running on device: %s' % device)
 
-    # train loader
+    # Load Datasets
+    # ==================
     train_set = datasets.get_dataset(dataset_name=exp_dict["dataset"],
-                                     train_flag=True,
-                                     datadir=savedir_base,
+                                     split='train',
+                                     datadir=args.datadir,
                                      exp_dict=exp_dict)
 
-    train_loader = torch.utils.data.DataLoader(train_set,
-                                               drop_last=True,
-                                               shuffle=True,
-                                               batch_size=exp_dict["batch_size"])
+    train_loader = DataLoader(train_set,
+                              drop_last=True,
+                              shuffle=True,
+                              sampler=None,
+                              batch_size=exp_dict["batch_size"])
 
-    # val set
     val_set = datasets.get_dataset(dataset_name=exp_dict["dataset"],
-                                   train_flag=False,
-                                   datadir=savedir_base,
+                                   split='val',
+                                   datadir=args.datadir,
                                    exp_dict=exp_dict)
 
-    # Model
-    # -----------
-    model = models.get_model(exp_dict["model"],
-                             train_set=train_set).cuda()
-    # Choose loss and metric function
-    loss_function = metrics.get_metric_function(exp_dict["loss_func"])
-
-    # Compute fstar
-    # -------------
-    if exp_dict['opt'].get('fstar_flag'):
-        ut.compute_fstar(train_set, loss_function, savedir_base, exp_dict)
-
-    # Load Optimizer
-    n_batches_per_epoch = len(train_set) / float(exp_dict["batch_size"])
-    opt = optimizers.get_optimizer(opt_dict=exp_dict["opt"],
-                                   params=model.parameters(),
-                                   n_batches_per_epoch=n_batches_per_epoch)
-
-    # Checkpoint
-    # -----------
-    model_path = os.path.join(savedir, 'model.pth')
-    score_list_path = os.path.join(savedir, 'score_list.pkl')
-    opt_path = os.path.join(savedir, 'opt_state_dict.pth')
+    # Load Model
+    # ==================
+    model = models.get_model(train_loader, exp_dict, device=device)
+    model_path = os.path.join(savedir, "model.pth")
+    score_list_path = os.path.join(savedir, "score_list.pkl")
 
     if os.path.exists(score_list_path):
         # resume experiment
-        score_list = hu.load_pkl(score_list_path)
-        model.load_state_dict(torch.load(model_path))
-        opt.load_state_dict(torch.load(opt_path))
-        s_epoch = score_list[-1]['epoch'] + 1
+        score_list = ut.load_pkl(score_list_path)
+        model.set_state_dict(torch.load(model_path))
+        s_epoch = score_list[-1]["epoch"] + 1
     else:
         # restart experiment
         score_list = []
         s_epoch = 0
-
-    # Train & Val
-    # ------------
-    print('Starting experiment at epoch %d/%d' %
-          (s_epoch, exp_dict['max_epoch']))
-
-    for e in range(s_epoch, exp_dict['max_epoch']):
+        
+    # Train and Val
+    # ==============
+    for epoch in range(s_epoch, exp_dict["max_epoch"]):
         # Set seed
-        seed = e + exp_dict['runs']
+        seed = epoch + exp_dict.get('runs', 0)
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-        score_dict = {}
-
-        # Compute train loss over train set
-        score_dict["train_loss"] = metrics.compute_metric_on_dataset(model, train_set,
-                                                                     metric_name=exp_dict["loss_func"])
-
-        # Compute val acc over val set
-        score_dict["val_acc"] = metrics.compute_metric_on_dataset(model, val_set,
-                                                                  metric_name=exp_dict["acc_func"])
-
-        # Train over train loader
-        model.train()
-        print("%d - Training model with %s..." % (e, exp_dict["loss_func"]))
-
-        # train and validate
+        # Train one epoch
         s_time = time.time()
-        for batch in tqdm.tqdm(train_loader):
-            images, labels = batch["images"].cuda(), batch["labels"].cuda()
-
-            opt.zero_grad()
-
-            # closure
-            def closure(): 
-                return loss_function(model, images, labels, backwards=True)
-            
-            opt.step(closure)
-
+        model.train_on_loader(train_loader)
         e_time = time.time()
 
-        # Record metrics
-        score_dict["epoch"] = e
-        score_dict["step_size"] = opt.state["step_size"]
-        score_dict["step_size_avg"] = opt.state["step_size_avg"]
-        score_dict["n_forwards"] = opt.state["n_forwards"]
-        score_dict["n_backwards"] = opt.state["n_backwards"]
-        score_dict["grad_norm"] = opt.state["grad_norm"]
-        score_dict["batch_size"] = train_loader.batch_size
-        score_dict["train_epoch_time"] = e_time - s_time
+        # Validate one epoch
+        train_loss_dict = model.val_on_dataset(train_set, metric=exp_dict["loss_func"], name='loss')
+        val_acc_dict = model.val_on_dataset(val_set, metric=exp_dict["acc_func"], name='score')
 
+        # Record metrics
+        score_dict = {"epoch": epoch}
+        score_dict.update(train_loss_dict)
+        score_dict.update(val_acc_dict)
+        score_dict["step_size"] = model.opt.state.get("step_size", {})
+        score_dict["step_size_avg"] = model.opt.state.get("step_size_avg", {})
+        score_dict["n_forwards"] = model.opt.state.get("n_forwards", {})
+        score_dict["n_backwards"] = model.opt.state.get("n_backwards", {})
+        score_dict["grad_norm"] = model.opt.state.get("grad_norm", {})
+        score_dict["train_epoch_time"] = e_time - s_time
+        score_dict.update(model.opt.state["gv_stats"])
+
+        # Add score_dict to score_list
         score_list += [score_dict]
 
         # Report and save
         print(pd.DataFrame(score_list).tail())
-        hu.save_pkl(score_list_path, score_list)
-        hu.torch_save(model_path, model.state_dict())
-        hu.torch_save(opt_path, opt.state_dict())
+        ut.save_pkl(score_list_path, score_list)
+        ut.torch_save(model_path, model.get_state_dict())
         print("Saved: %s" % savedir)
 
-    print('Experiment completed')
 
-
-if __name__ == '__main__':
+   
+if __name__ == "__main__":
+    import exp_configs
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-e', '--exp_group_list', nargs='+')
+    parser.add_argument('-e', '--exp_group_list', nargs="+")
     parser.add_argument('-sb', '--savedir_base', required=True)
-    parser.add_argument('-r', '--reset',  default=0, type=int)
-    parser.add_argument('-ei', '--exp_id', default=None)
-    parser.add_argument('-j', '--run_jobs', default=None)
+    parser.add_argument('-d', '--datadir', required=True)
+    parser.add_argument("-r", "--reset",  default=0, type=int)
+    parser.add_argument("-c", "--cuda", default=1, type=int)
+    parser.add_argument("-j", "--job_scheduler", default=None)
+    parser.add_argument("-p", "--python_binary_path", default=None)
+    args, others = parser.parse_known_args()
 
-    args = parser.parse_args()
+    # Get job configuration to launch experiments in the cluster
+    job_config = None
+    if os.path.exists('job_configs.py'):
+        import job_configs
+        job_config = job_configs.JOB_CONFIG
 
-    # Collect experiments
-    # -------------------
-    if args.exp_id is not None:
-        # select one experiment
-        savedir = os.path.join(args.savedir_base, args.exp_id)
-        exp_dict = hu.load_json(os.path.join(savedir, 'exp_dict.json'))
-
-        exp_list = [exp_dict]
-
-    else:
-        # select exp group
-        exp_list = []
-        for exp_group_name in args.exp_group_list:
-            exp_list += exp_configs.EXP_GROUPS[exp_group_name]
-
-    # Run experiments
-    # ---------------
-    if not args.run_jobs:
-        # run experiments sequentially
-        for exp_dict in exp_list:
-            # do trainval
-            trainval(exp_dict=exp_dict,
-                     savedir_base=args.savedir_base,
-                     reset=args.reset)
-
-    else:
-        import job_config
-        # run experiments in parallel
-        run_command = ('python trainval.py -ei <exp_id> -sb %s' %
-                       (args.savedir_base))
-        hjb.run_exp_list_jobs(exp_list,
-                              savedir_base=args.savedir_base,
-                              workdir=os.path.dirname(
-                                  os.path.realpath(__file__)),
-                              run_command=run_command,
-                              job_config=job_config.job_config)
+    # Run experiments either sequentially or in the cluster
+    hw.run_wizard(func=trainval, 
+                exp_groups=exp_configs.EXP_GROUPS, 
+                job_config=job_config, 
+                job_scheduler=args.job_scheduler,
+                python_binary_path=args.python_binary_path,
+                use_threads=True, 
+                args=args)
