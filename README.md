@@ -52,6 +52,8 @@ python trainval.py -e mnist -sb .results -d ../results -v results.ipynb -r 1
 
 Open `results.ipynb` and run the first cell to get the following visualization of results.
 
+![](results/dashboard.png)
+
 
 
 #### Citation
