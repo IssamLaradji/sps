@@ -1,11 +1,13 @@
-import hashlib 
 import pickle
 import json
 import os
 import itertools
 import torch
 import numpy as np
-import tqdm
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 def opt_step(name, opt, model, batch, loss_function, use_backpack, epoch):
@@ -36,6 +38,72 @@ def opt_step(name, opt, model, batch, loss_function, use_backpack, epoch):
     return loss
 
     
+
+def flatten_dict(d, parent_key=""):
+    items = []
+    for k, v in d.items():
+        full_key = f"{parent_key}.{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, full_key).items())
+        else:
+            items.append((full_key, v))
+    return dict(items)
+
+
+def _get_hparams(exp_group):
+    flat_group = [flatten_dict(e) for e in exp_group]
+    all_keys = set().union(*[e.keys() for e in flat_group])
+    return [k for k in all_keys if len({str(e.get(k)) for e in flat_group}) > 1]
+
+
+def visualize(exp_group, savedir_base, name="results", x_col="epoch", y_cols=("train_loss", "val_score")):
+    plots_dir = os.path.join(savedir_base, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+
+    hparam_keys = _get_hparams(exp_group)
+    fig, axes = plt.subplots(1, len(y_cols), figsize=(6 * len(y_cols), 4))
+    if len(y_cols) == 1:
+        axes = [axes]
+
+    for exp_dict in exp_group:
+        exp_hash = get_exp_hash(exp_dict)
+        score_list_path = os.path.join(savedir_base, exp_hash, "score_list.pkl")
+        if not os.path.exists(score_list_path):
+            continue
+
+        df = pd.DataFrame(load_pkl(score_list_path))
+        flat = flatten_dict(exp_dict)
+        label = "_".join(f"{k}={flat.get(k)}" for k in hparam_keys)
+
+        for ax, col in zip(axes, y_cols):
+            if col in df.columns:
+                ax.plot(df[x_col], df[col], label=label)
+                ax.set_xlabel(x_col)
+                ax.set_ylabel(col)
+                ax.set_title(col)
+
+    for ax in axes:
+        ax.legend(fontsize=7, loc="best")
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, f"{name}.png"), bbox_inches="tight")
+    plt.close(fig)
+    print("Plots saved to: %s" % plots_dir)
+
+
+def cartesian_exp_group(exp_config):
+    keys, values = zip(*exp_config.items())
+    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
+
+
+def get_exp_hash(exp_dict):
+    import hashlib
+    flat = flatten_dict(exp_dict)
+    name = "_".join(f"{k}_{v}" for k, v in sorted(flat.items()))
+    suffix = "_" + hashlib.md5(name.encode()).hexdigest()[:8]
+    max_len = 255 - len(suffix.encode())
+    return name.encode()[:max_len].decode(errors="ignore") + suffix
+
 
 def save_pkl(fname, data):
     """Save data in pkl format."""
@@ -98,29 +166,6 @@ def compute_fstar(model, train_set):
     return loss
 
 
-def update_trainloader_and_opt(train_set, opt, batch_size, n_train, batch_grow_factor, batch_size_max, 
-                               ssn_flag=True):
-    n_iters = (n_train // batch_size)
-
-    batch_size_new = batch_size * batch_grow_factor ** n_iters
-    batch_size_new = min(int(batch_size_new), batch_size_max)
-    batch_size_new = min(batch_size_new, n_train)
-    train_loader = torch.utils.data.DataLoader(train_set, 
-                                         batch_size=batch_size_new,
-                                          drop_last=False, 
-                                         shuffle=True)
-                                         
-    opt.n_batches_in_epoch = (n_train // batch_size_new)
-
-    
-    if ssn_flag:
-        from ssn import newton
-        assert isinstance(opt, newton.SSNArmijo)
-        opt.lm = opt.lm / (np.sqrt(batch_grow_factor ** n_iters))
-
-        print('LM regularization = ', opt.lm)
-
-    return train_loader, opt
     
 
 

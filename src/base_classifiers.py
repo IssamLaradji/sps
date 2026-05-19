@@ -3,13 +3,12 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import math
-# from .base import mxresnet
 import torchvision.models as models
 
 def get_classifier(clf_name, train_set):    
     if clf_name in ["linear", "logistic"]:
         batch = train_set[0]
-        model = Mlp_model(input_size=batch['images'].shape[0], hidden_sizes=[], n_classes=2, bias=False)
+        model = Mlp_model(input_size=batch['images'].shape[0], hidden_sizes=[], n_classes=1, bias=False)
         
 
     if clf_name == "mlp":

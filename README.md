@@ -33,37 +33,30 @@ for epoch in range(100):
 #### Training
 
 ```python
-python trainval.py  -e  [Experiment group to run like 'mnist, cifar10, cifar100'] 
+python trainval.py  -e  kernel,
                     -sb [Directory where the experiments are saved]
                     -d  [Directory where the datasets are saved]
                     -r  [Flag for whether to save the experiments]
-                    -j  [Scheduler for launching the experiments. 
-                         Use None for running them on local maching]
-                    -v  [File name where a jupyter is saved for visualization]
+                    -v  [Flag for visualizing the results in results/plots]
 ```
 
 Example:
 
 ```
-python trainval.py -e mnist -sb .results -d ../results -v results.ipynb -r 1
+python trainval.py -e mnist -sb results -d data -r 1
 ```
-
-#### Visualizing
-
-Open `results.ipynb` and run the first cell to get the following visualization of results.
-
-![](results/dashboard.png)
-
 
 
 #### Citation
 
 ```
-@article{loizou2020stochastic,
-  title={Stochastic polyak step-size for SGD: An adaptive learning rate for fast convergence},
-  author={Loizou, Nicolas and Vaswani, Sharan and Laradji, Issam and Lacoste-Julien, Simon},
-  journal={arXiv preprint arXiv:2002.10542},
-  year={2020}
+@inproceedings{loizou2021stochastic,
+  title={Stochastic polyak step-size for sgd: An adaptive learning rate for fast convergence},
+  author={Loizou, Nicolas and Vaswani, Sharan and Laradji, Issam Hadj and Lacoste-Julien, Simon},
+  booktitle={International conference on artificial intelligence and statistics},
+  pages={1306--1314},
+  year={2021},
+  organization={PMLR}
 }
 ```
 

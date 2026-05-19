@@ -1,14 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import os, pprint, tqdm
-import numpy as np
-import pandas as pd
-from haven import haven_utils as hu 
-from haven import haven_img as hi
+import tqdm
+import time
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import sys
 from . import base_classifiers
 from . import optimizers
 
@@ -16,13 +10,13 @@ from . import optimizers
 def get_model(train_loader, exp_dict, device):
     return Classifier(train_loader, exp_dict, device)
 
-    
+
 class Classifier(torch.nn.Module):
     def __init__(self, train_loader, exp_dict, device):
         super().__init__()
         self.exp_dict = exp_dict
         self.device = device
-        
+
         self.model_base = base_classifiers.get_classifier(exp_dict['model'], train_set=train_loader.dataset)
 
         # Load Optimizer
@@ -31,15 +25,18 @@ class Classifier(torch.nn.Module):
                                        params=self.parameters(),
                                        train_loader=train_loader,                                
                                        exp_dict=exp_dict)
-        
+
     def train_on_loader(self, train_loader):
+        s_time = time.time()
         self.train()
 
         pbar = tqdm.tqdm(train_loader)
         for batch in pbar:
             score_dict = self.train_on_batch(batch)
             pbar.set_description(f'Training - {score_dict["train_loss"]:.3f}')
-            
+        e_time = time.time()
+        score_dict["train_epoch_time"] = e_time - s_time
+        
         return score_dict
 
     def get_state_dict(self):
@@ -51,8 +48,8 @@ class Classifier(torch.nn.Module):
     def set_state_dict(self, state_dict):
         self.model_base.load_state_dict(state_dict["model"])
         self.opt.load_state_dict(state_dict["opt"])
-    
-    def val_on_dataset(self, dataset, metric, name):
+
+    def val_on_dataset(self, dataset, metric):
         self.eval()
 
         metric_function = get_metric_function(metric)
@@ -64,15 +61,14 @@ class Classifier(torch.nn.Module):
             images, labels = batch["images"].to(device=self.device), batch["labels"].to(device=self.device)
             score_sum += metric_function(self.model_base, images, labels).item() * images.shape[0]    
             score = float(score_sum / len(loader.dataset))
-            
+
             pbar.set_description(f'Validating {metric}: {score:.3f}')
 
-        return {f'{dataset.split}_{name}': score}
-
+        return {"score": score, "metric": metric}
 
     def val_on_loader(self, batch):
         pass 
-    
+
     def train_on_batch(self, batch):
         self.opt.zero_grad()
         loss_function = get_metric_function(self.exp_dict['loss_func'])
@@ -84,7 +80,7 @@ class Classifier(torch.nn.Module):
             closure = lambda for_backtracking=False : loss_function(self.model_base, images, labels, backwards=False, 
                                                                     backpack=(use_backpack and not for_backtracking))
             loss = self.opt.step(closure)
-                    
+
         elif (name in ["sgd_armijo", "ssn", 'adaptive_first', 'l4', 'ali_g', 'sgd_goldstein', 'sgd_nesterov', 'sgd_polyak', 'seg']):
             closure = lambda : loss_function(self.model_base, images, labels, backwards=False, backpack=use_backpack)
             loss = self.opt.step(closure)
@@ -92,11 +88,9 @@ class Classifier(torch.nn.Module):
         else:
             closure = lambda : loss_function(self.model_base, images, labels, backwards=True, backpack=use_backpack)
             loss = self.opt.step(closure=closure)
-            
+
         return {'train_loss': float(loss)}
 
-
-        
 
 # Metrics
 def get_metric_function(metric):
@@ -134,7 +128,6 @@ def get_metric_function(metric):
         return squared_loss
 
 
-
 def logistic_l2_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
     logits = model(images)
     criterion = torch.nn.BCEWithLogitsLoss(reduction=reduction)
@@ -150,7 +143,7 @@ def logistic_l2_loss(model, images, labels, backwards=False, reduction="mean", b
         loss.backward()
 
     return loss
-    
+
 def softmax_loss(model, images, labels, backwards=False, reduction="mean", backpack=False):
     logits = model(images)
     criterion = torch.nn.CrossEntropyLoss(reduction=reduction)
@@ -252,5 +245,3 @@ def softmax_accuracy(model, images, labels):
     acc = (pred_labels == labels).float().mean()
 
     return acc
-
-

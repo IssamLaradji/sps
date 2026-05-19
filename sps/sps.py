@@ -1,7 +1,4 @@
-import numpy as np
 import torch
-import time
-import copy
 
 
 class Sps(torch.optim.Optimizer):

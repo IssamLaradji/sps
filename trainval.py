@@ -1,38 +1,13 @@
 import torch
-import torchvision
-import tqdm
 import pandas as pd
-import pprint
-import math
-import itertools
-import os, sys
-import pylab as plt
-import exp_configs
+import os
 import time
 import numpy as np
-import torch.nn as nn
+import argparse
 from src import models
 from src import datasets
-from src import optimizers
 from src import utils as ut
-from src import metrics
-from haven import haven_wizard as hw
-import argparse
-
-from torch.backends import cudnn
-from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import RandomSampler
-from torch.utils.data.dataloader import default_collate
-
-# cudnn.benchmark = True
-
-from haven import haven_utils as hu
-from haven import haven_results as hr
-from haven import haven_chk as hc
-import shutil
-
-import pprint
 
 
 def trainval(exp_dict, savedir, args):
@@ -83,7 +58,7 @@ def trainval(exp_dict, savedir, args):
         # restart experiment
         score_list = []
         s_epoch = 0
-        
+
     # Train and Val
     # ==============
     for epoch in range(s_epoch, exp_dict["max_epoch"]):
@@ -93,62 +68,82 @@ def trainval(exp_dict, savedir, args):
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-        # Train one epoch
-        s_time = time.time()
-        model.train_on_loader(train_loader)
-        e_time = time.time()
+        if epoch == 0:
+            # Validate one epoch
+            train_dict = model.val_on_dataset(train_set, metric=exp_dict["loss_func"])
+            val_dict = model.val_on_dataset(val_set, metric=exp_dict["acc_func"])
 
-        # Validate one epoch
-        train_loss_dict = model.val_on_dataset(train_set, metric=exp_dict["loss_func"], name='loss')
-        val_acc_dict = model.val_on_dataset(val_set, metric=exp_dict["acc_func"], name='score')
+        else:
+            # Train one epoch
+            model.train_on_loader(train_loader)
+
+            # Validate one epoch
+            train_dict = model.val_on_dataset(train_set, metric=exp_dict["loss_func"])
+            val_dict = model.val_on_dataset(val_set, metric=exp_dict["acc_func"])
 
         # Record metrics
         score_dict = {"epoch": epoch}
-        score_dict.update(train_loss_dict)
-        score_dict.update(val_acc_dict)
+        score_dict["train_" + train_dict["metric"]] = train_dict["score"]
+        score_dict["val_" + val_dict["metric"]] = val_dict["score"]
         score_dict["step_size"] = model.opt.state.get("step_size", {})
         score_dict["step_size_avg"] = model.opt.state.get("step_size_avg", {})
         score_dict["n_forwards"] = model.opt.state.get("n_forwards", {})
         score_dict["n_backwards"] = model.opt.state.get("n_backwards", {})
         score_dict["grad_norm"] = model.opt.state.get("grad_norm", {})
-        score_dict["train_epoch_time"] = e_time - s_time
         score_dict.update(model.opt.state["gv_stats"])
 
         # Add score_dict to score_list
         score_list += [score_dict]
 
         # Report and save
-        print(pd.DataFrame(score_list).tail())
+        df = pd.DataFrame(score_list)
+        print(df.tail())
         ut.save_pkl(score_list_path, score_list)
+        ut.save_json(os.path.join(savedir, "score_list.json"), score_list)
         ut.torch_save(model_path, model.get_state_dict())
         print("Saved: %s" % savedir)
 
+        df.to_csv(os.path.join(savedir, "score_list.csv"), index=False)
 
-   
+    print("Done with Experiment!")
+
 if __name__ == "__main__":
-    import exp_configs
+    import exp_configs as exp_configs
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-e', '--exp_group_list', nargs="+")
-    parser.add_argument('-sb', '--savedir_base', required=True)
-    parser.add_argument('-d', '--datadir', required=True)
+    parser.add_argument("-e", "--exp_group", default="mnist")
+    parser.add_argument('-sb', '--savedir_base', default="results")
+    parser.add_argument('-d', '--datadir', default="data")
     parser.add_argument("-r", "--reset",  default=0, type=int)
-    parser.add_argument("-c", "--cuda", default=1, type=int)
-    parser.add_argument("-j", "--job_scheduler", default=None)
-    parser.add_argument("-p", "--python_binary_path", default=None)
+    parser.add_argument("-c", "--cuda", default=0, type=int)
+    parser.add_argument("-v", "--visualize", default=1, type=int)
     args, others = parser.parse_known_args()
 
-    # Get job configuration to launch experiments in the cluster
-    job_config = None
-    if os.path.exists('job_configs.py'):
-        import job_configs
-        job_config = job_configs.JOB_CONFIG
+    exp_group = exp_configs.EXP_GROUPS[args.exp_group]
+    for exp_dict in exp_group:
+        exp_hash = ut.get_exp_hash(exp_dict)
+        savedir = os.path.join(args.savedir_base, exp_hash)
 
-    # Run experiments either sequentially or in the cluster
-    hw.run_wizard(func=trainval, 
-                exp_groups=exp_configs.EXP_GROUPS, 
-                job_config=job_config, 
-                job_scheduler=args.job_scheduler,
-                python_binary_path=args.python_binary_path,
-                use_threads=True, 
-                args=args)
+        # Reset experiment if already exists
+        if args.reset:
+            if os.path.exists(savedir):
+                print("Experiment already exists, deleting and resetting: %s" % savedir)
+                import shutil
+                shutil.rmtree(savedir)
+
+        # Run experiment
+        if os.path.exists(savedir):
+            print("Experiment already exists, skipping: %s" % savedir)
+            continue
+        else:
+            os.makedirs(savedir, exist_ok=True)
+            ut.save_json(os.path.join(savedir, "exp_dict.json"), exp_dict)
+            print("Running experiment and saving to: %s" % savedir)
+            trainval(exp_dict, savedir, args)
+
+    # visualize experiments
+    if args.visualize:
+        ut.visualize(exp_group, args.savedir_base,
+                     name=args.exp_group,
+                     x_col="epoch",
+                     y_cols=("train_" + exp_dict["loss_func"], "val_" + exp_dict["acc_func"]))
