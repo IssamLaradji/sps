@@ -1,1 +1,10 @@
-haven-ai>=0.0
+torch
+torchvision
+numpy
+pandas
+scikit-learn
+scipy
+scikit-image
+Pillow
+tqdm
+matplotlib
